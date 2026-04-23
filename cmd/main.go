@@ -17,6 +17,7 @@
 //	dlm read   /tmp/events
 //	dlm read   /tmp/events 1    # time-travel to version 1
 //	dlm optimize /tmp/events
+
 package main
 
 import (
@@ -27,6 +28,7 @@ import (
 
 	"github.com/jhua4/delta-lake-mini/internal/schema"
 	"github.com/jhua4/delta-lake-mini/internal/table"
+	"github.com/jhua4/delta-lake-mini/internal/utils"
 )
 
 func main() {
@@ -127,10 +129,11 @@ func cmdRead(path string, args []string) error {
 	}
 
 	fmt.Printf("Snapshot at version %d - %d file(s):\n", result.Version, len(result.Files))
-	for _, f := range result.Files {
-		fmt.Printf("  %s\n", f)
+	for i, f := range result.Files {
+		fmt.Printf("   [%d] %s\n", i+1, f)
 	}
-	return nil
+
+	return tbl.Scan(result.Version, result.Files)
 }
 
 func cmdHistory(path string) error {
@@ -171,16 +174,24 @@ func cmdDescribe(path string) error {
 	return tbl.Describe()
 }
 
-// inferSchema builds a permissive schema from the keys of the first row.
-// All fields are typed as "string" and nullable - useful for quick CLI demos.
-// In production you'd pass an explicit schema or infer types properly.
+// inferSchema tries to tell if the keys of the first row are int64, float64, or string.
 func inferSchema(rows []table.Row) *schema.Schema {
 	if len(rows) == 0 {
 		return &schema.Schema{}
 	}
 	var fields []schema.Field
-	for k := range rows[0] {
-		fields = append(fields, schema.Field{Name: k, Type: "string", Nullable: true})
+	for k, v := range rows[0] {
+		typeStr := "string"
+
+		if _, ok := v.(float64); ok {
+			if utils.IsInt(v.(float64)) {
+				typeStr = "int64"
+			} else {
+				typeStr = "float64"
+			}
+		}
+
+		fields = append(fields, schema.Field{Name: k, Type: typeStr, Nullable: true})
 	}
 	return &schema.Schema{Fields: fields}
 }

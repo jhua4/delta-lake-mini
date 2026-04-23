@@ -12,6 +12,7 @@ package table
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -174,9 +175,35 @@ func (t *DeltaTable) ReadVersion(version int64) (*ReadResult, error) {
 	for path := range snap.ActiveFiles {
 		files = append(files, filepath.Join(t.root, path))
 	}
-	sort.Strings(files) // deterministic order
+	// sort.Strings(files) // deterministic order
+	// Sort by the order they were added to the log, not by filename.
+	sort.Slice(files, func(i, j int) bool {
+		return snap.ActiveFiles[files[i]].ModificationTime < snap.ActiveFiles[files[j]].ModificationTime
+	})
 
 	return &ReadResult{Version: snap.Version, Files: files}, nil
+}
+
+// Scan reads each file from table at specified version.
+func (t *DeltaTable) Scan(version int64, files []string) error {
+	_, err := t.log.ReadSnapshot(version)
+	if err != nil {
+		return err
+	}
+
+	for i, f := range files {
+		fmt.Printf("\n-- [%d] %s --\n", i+1, f)
+		file, err := os.Open(f)
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(os.Stdout, file)
+		file.Close()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // History returns a summary of all committed versions.
